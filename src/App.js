@@ -29,7 +29,7 @@ function App() {
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`message ${msg.sender === 'Abhishek' ? 'received' : 'sent'}`}
+            className={`message ${msg.sender === 'Sender' ? 'received' : 'sent'}`}
           >
             <div className="sender">{msg.sender}</div>
             <div className="timestamp">{msg.timestamp}</div>
