@@ -3,6 +3,9 @@ import './App.css';
 
 function App() {
   const [messages, setMessages] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userInput, setUserInput] = useState(''); 
+  const [uniqueSenders, setUniqueSenders] = useState([]);
 
   useEffect(() => {
     fetch('/chat.txt')
@@ -19,9 +22,62 @@ function App() {
           return null;
         }).filter(Boolean);
         setMessages(parsedMessages);
+
+       
+        const senders = [...new Set(parsedMessages.map(msg => msg.sender))];
+        setUniqueSenders(senders);
       })
       .catch(error => console.error('Error loading chat:', error));
   }, []);
+
+  const handleUserSubmit = (e) => {
+    e.preventDefault();
+    if (userInput.trim() && uniqueSenders.includes(userInput.trim())) {
+      setCurrentUser(userInput.trim()); 
+    } else {
+      alert("Please enter a valid name from the list.");
+    }
+  };
+
+ 
+  if (!currentUser) {
+    return (
+      <div className="app">
+        <div className="chat-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
+          <form onSubmit={handleUserSubmit} style={{ textAlign: 'center' }}>
+            <h3>Who are you?</h3>
+            {uniqueSenders.length > 1 ? (
+              <>
+                <p>Multiple users found:</p>
+                <ul style={{ listStyle: 'none', padding: 0 }}>
+                  {uniqueSenders.map((sender, index) => (
+                    <li key={index}>{sender}</li>
+                  ))}
+                </ul>
+              </>
+            ) : uniqueSenders.length === 1 ? (
+              <p>Only one user found: {uniqueSenders[0]}</p>
+            ) : (
+              <p>Loading chat data...</p>
+            )}
+            <input
+              type="text"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              placeholder="Enter your name from the list"
+              style={{ padding: '10px', margin: '10px', borderRadius: '5px', border: '1px solid #ddd' }}
+            />
+            <button
+              type="submit"
+              style={{ padding: '10px 20px', background: '#128c7e', color: '#fff', border: 'none', borderRadius: '5px' }}
+            >
+              Submit
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -29,7 +85,7 @@ function App() {
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`message ${msg.sender === 'Sender' ? 'received' : 'sent'}`}
+            className={`message ${msg.sender === currentUser ? 'sent' : 'received'}`}
           >
             <div className="sender">{msg.sender}</div>
             <div className="timestamp">{msg.timestamp}</div>

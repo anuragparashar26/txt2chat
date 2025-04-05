@@ -62,38 +62,3 @@ a {
 a:hover {
   text-decoration: underline;
 }
-
-.chat-input {
-  display: flex;
-  align-items: center;
-  padding: 10px;
-  background: #ffffff;
-  border-top: 1px solid #ddd;
-  position: sticky;
-  bottom: 0;
-}
-
-.chat-input input {
-  flex: 1;
-  padding: 10px;
-  border: none;
-  border-radius: 20px;
-  background: #f1f0f0;
-  margin-right: 10px;
-  font-size: 14px;
-  outline: none;
-}
-
-.chat-input button {
-  background: #128c7e;
-  color: #fff;
-  border: none;
-  padding: 10px 15px;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 16px;
-}
-
-.chat-input button:hover {
-  background: #075e54;
-}
