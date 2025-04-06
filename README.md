@@ -21,7 +21,7 @@ This is a work-in-progress React app to **visualize and explore WhatsApp exporte
 
 - [ ] Upload `.zip` file containing `chat.txt` and `/media`
 - [ ] Lazy-load media files to handle large archives
-- [ ] Virtualized rendering for huge chat files
+- [ ] Virtualized rendering for huge chat files (20MB+)
 - [ ] Full-text search indexing
 - [ ] Responsive layout improvements
 
@@ -35,6 +35,8 @@ This is a work-in-progress React app to **visualize and explore WhatsApp exporte
 npm install
 npm start
 ```
+
+App runs at [http://localhost:3000](http://localhost:3000)
 
 ## 🧠 Notes
 
