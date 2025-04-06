@@ -1,6 +1,56 @@
-.chat-container {
-  max-width: 100%;
+.app {
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+}
+
+.search-container {
+  display: flex;
+  padding: 10px;
+  background-color: #f6f6f6;
+  border-bottom: 1px solid #ddd;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1;
+  padding: 10px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  margin-right: 8px;
+  min-width: 200px;
+}
+
+.date-input {
+  padding: 9px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  margin-right: 8px;
+}
+
+.search-button, .nav-button, .clear-button {
+  padding: 10px 15px;
+  background-color: #128c7e;
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  margin-right: 5px;
+}
+
+.nav-button {
+  padding: 8px 12px;
+}
+
+.search-count {
+  margin: 0 8px;
+  font-size: 14px;
+  color: #555;
+}
+
+.chat-container {
+  flex: 1;
   display: flex;
   flex-direction: column;
   background-color: #e5ddd5;
@@ -8,29 +58,46 @@
   padding: 10px;
 }
 
+.message-wrapper {
+  width: 100%;
+  display: flex;
+  margin-bottom: 8px;
+  transition: background-color 0.3s ease;
+}
+
+.highlighted-message {
+  background-color: rgba(255, 213, 0, 0.2);
+  border-radius: 12px;
+  padding: 3px;
+}
+
+.sent-wrapper {
+  justify-content: flex-end;
+}
+
+.received-wrapper {
+  justify-content: flex-start;
+}
+
 .message {
   display: flex;
   flex-direction: column;
   padding: 8px 12px;
-  margin: 5px;
   border-radius: 8px;
-  max-width: 75%;
+  max-width: 70%;
   font-size: 14px;
   line-height: 1.4;
   word-wrap: break-word;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  position: relative;
 }
 
 .sent {
   background-color: #dcf8c6;
-  align-self: flex-end;
   border-bottom-right-radius: 0;
 }
 
 .received {
   background-color: #ffffff;
-  align-self: flex-start;
   border-bottom-left-radius: 0;
 }
 
@@ -44,11 +111,14 @@
 .timestamp {
   font-size: 0.75em;
   color: #888;
-  margin-top: 3px;
+  margin-top: 5px;
   align-self: flex-end;
+  text-align: right;
 }
 
-img, video, audio {
+img,
+video,
+audio {
   max-width: 250px;
   border-radius: 8px;
   margin-top: 5px;
@@ -61,4 +131,18 @@ a {
 
 a:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .search-container {
+    padding: 8px;
+  }
+  
+  .search-input, .date-input {
+    margin-bottom: 8px;
+  }
+  
+  .message {
+    max-width: 85%;
+  }
 }
