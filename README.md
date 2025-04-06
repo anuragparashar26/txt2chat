@@ -16,14 +16,14 @@ This is a work-in-progress React app to **visualize and explore WhatsApp exporte
 - Navigate through search results
 - Scroll to matched messages
 - Media rendering (basic support for jpg, mp4, opus, etc.)
+- Virtualized rendering for huge chat files 
+- Lazy-load media files inside the chat
+- Full-text search indexing
 
 ## 🛠️ Work In Progress
 
-- [ ] Upload `.zip` file containing `chat.txt` and `/media`
-- [ ] Lazy-load media files to handle large archives
-- [ ] Virtualized rendering for huge chat files (20MB+)
-- [ ] Full-text search indexing
-- [ ] Responsive layout improvements
+- [ ] Layout Improvements
+- [ ] Fixing Flickering Issues for Very Large Chat Data
 
 ## 📁 Setup (Development)
 
