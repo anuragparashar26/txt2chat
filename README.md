@@ -1,8 +1,6 @@
 # 📱 WhatsApp Chat Viewer (WIP)
 
-> **Status**: 🚧 Under Development
-
-This is a work-in-progress React app to **visualize and explore WhatsApp exported chat files**. It supports basic parsing of `chat.txt`, identifies users, and displays the messages in a chat-like UI. Media preview for image, video, and audio attachments is also being integrated.
+This is a React app to **visualize and explore WhatsApp exported chat files**. It supports basic parsing of `chat.txt`, identifies users, and displays the messages in a chat-like UI. Media preview for image, video, and audio attachments is also being integrated.
 
 ## ✅ Current Features
 
