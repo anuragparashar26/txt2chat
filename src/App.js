@@ -185,6 +185,7 @@ const getMediaPreviewHeight = (content) => {
 
 function App() {
   const [messages, setMessages] = useState([]);
+  const [chatFolder, setChatFolder] = useState(null); // Electron: selected folder
   const [currentUser, setCurrentUser] = useState(null);
   const [userInput, setUserInput] = useState('');
   const [uniqueSenders, setUniqueSenders] = useState([]);
@@ -269,11 +270,39 @@ function App() {
     return parseChatFromText(fallbackText, setParseProgress);
   }, []);
 
+  // Loads chat.txt from a file path (Electron)
+  const loadChatFromFilePath = useCallback(async (chatPath) => {
+    setIsLoading(true);
+    setLoadingStatus('Loading chat.txt...');
+    setParseProgress(0);
+    try {
+      if (window.electronAPI && window.electronAPI.readChatFile) {
+        const result = await window.electronAPI.readChatFile(chatPath);
+        if (result.success) {
+          setLoadingStatus('Parsing chat file...');
+          const parsedMessages = parseChatFromText(result.text, setParseProgress);
+          applyParsedMessages(parsedMessages);
+          clearMediaObjectUrlCache();
+          setLoadingStatus(`Loaded ${parsedMessages.length.toLocaleString()} messages`);
+        } else {
+          setLoadingStatus(`Error: ${result.error}`);
+        }
+      } else {
+        setLoadingStatus('Electron API not available');
+      }
+    } catch (error) {
+      console.error('Error loading chat:', error);
+      setLoadingStatus('Failed to load chat.txt');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [applyParsedMessages, clearMediaObjectUrlCache]);
+
+  // Loads chat.txt from public/ (Web)
   const loadChatFromPublicFolder = useCallback(async () => {
     setIsLoading(true);
     setLoadingStatus('Loading public/chat.txt...');
     setParseProgress(0);
-
     try {
       const response = await fetch('/chat.txt');
       const parsedMessages = await loadChatFromResponse(response);
@@ -288,18 +317,33 @@ function App() {
     }
   }, [applyParsedMessages, clearMediaObjectUrlCache, loadChatFromResponse]);
 
+  // Electron: resolve media file from selected folder
   const resolveMediaUrl = useCallback(async (fileName) => {
     if (mediaUrlCacheRef.current.has(fileName)) {
       return mediaUrlCacheRef.current.get(fileName);
     }
-
+    if (chatFolder && chatFolder.mediaFiles) {
+      // Try to find the file in the selected folder
+      const found = chatFolder.mediaFiles.find(f => f.endsWith(fileName));
+      if (found) {
+        // Construct file path for Electron (file:// protocol)
+        const fullPath = `${chatFolder.folderPath}/${found}`.replace(/\\/g, '/');
+        return fullPath;
+      }
+    }
+    // Fallback to public
     const fallbackUrl = `/media/${encodeURIComponent(fileName)}`;
     return fallbackUrl;
-  }, []);
+  }, [chatFolder]);
 
   useEffect(() => {
+    // If running in Electron, wait for folder selection
+    if (window.electronAPI) {
+      // Do nothing until user selects folder
+      return () => clearMediaObjectUrlCache();
+    }
+    // Web: load from public
     loadChatFromPublicFolder();
-
     return () => {
       clearMediaObjectUrlCache();
     };
@@ -337,10 +381,8 @@ function App() {
 
   const handleUserSubmit = (e) => {
     e.preventDefault();
-    if (userInput.trim() && uniqueSenders.includes(userInput.trim())) {
-      setCurrentUser(userInput.trim());
-    } else {
-      alert('Please enter a valid name from the list.');
+    if (userInput && uniqueSenders.includes(userInput)) {
+      setCurrentUser(userInput);
     }
   };
 
@@ -432,45 +474,90 @@ function App() {
     }
   };
 
+  // Folder picker for Electron
+  const handleSelectFolder = async () => {
+    if (window.electronAPI) {
+      setIsLoading(true);
+      setLoadingStatus('Selecting folder...');
+      const result = await window.electronAPI.selectChatFolder();
+      if (result && result.error) {
+        setLoadingStatus(result.error);
+        setIsLoading(false);
+        return;
+      }
+      if (result && result.chatPath) {
+        setChatFolder(result);
+        await loadChatFromFilePath(result.chatPath);
+      }
+      setIsLoading(false);
+    }
+  };
+
   if (!currentUser) {
     return (
-      <div className="app">
-        <div className="chat-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
-          <form onSubmit={handleUserSubmit} style={{ textAlign: 'center' }}>
-            {isLoading && (
-              <p className="loading-info">
-                {loadingStatus} ({parseProgress}%)
-              </p>
-            )}
-            <h3>Who are you?</h3>
+      <div className="app home-app">
+        <div className="chat-container home-screen">
+          <div className="home-card">
+            <h1 className="home-title">TXT2Chat</h1>
+            <p className="home-subtitle">Open your exported chat and quickly search your conversation history.</p>
+
+          {window.electronAPI && (
+            <button
+              onClick={handleSelectFolder}
+              className="select-folder-button"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Loading...' : 'Select Chat Folder'}
+            </button>
+          )}
+
+          {isLoading && (
+            <p className="loading-info home-loading-info">
+              {loadingStatus} ({parseProgress}%)
+            </p>
+          )}
+
+          <form onSubmit={handleUserSubmit} className="home-form">
+            <h3 className="home-question">Who are you?</h3>
             {uniqueSenders.length > 1 ? (
               <>
-                <p>Multiple users found:</p>
-                <ul style={{ listStyle: 'none', padding: 0 }}>
+                <p className="home-meta">Multiple users found:</p>
+                <ul className="home-user-list">
                   {uniqueSenders.map((sender, index) => (
-                    <li key={index}>{sender}</li>
+                    <li key={index} className="home-user-item">{sender}</li>
                   ))}
                 </ul>
               </>
             ) : uniqueSenders.length === 1 ? (
-              <p>Only one user found: {uniqueSenders[0]}</p>
+              <p className="home-meta">Only one user found: <strong>{uniqueSenders[0]}</strong></p>
             ) : (
-              <p>Loading chat data...</p>
+              <p className="home-meta">Loading chat data...</p>
             )}
-            <input
-              type="text"
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Enter your name from the list"
-              style={{ padding: '10px', margin: '10px', borderRadius: '5px', border: '1px solid #ddd' }}
-            />
-            <button
-              type="submit"
-              style={{ padding: '10px 20px', background: '#128c7e', color: '#fff', border: 'none', borderRadius: '5px' }}
-            >
-              Submit
-            </button>
+
+            <div className="home-input-row">
+              <select
+                value={userInput}
+                onChange={e => setUserInput(e.target.value)}
+                className="home-input home-select"
+                disabled={uniqueSenders.length === 0}
+              >
+                <option value="" disabled>
+                  {uniqueSenders.length === 0 ? 'Loading users...' : 'Select your name'}
+                </option>
+                {uniqueSenders.map((sender, idx) => (
+                  <option key={idx} value={sender}>{sender}</option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="home-submit-button"
+                disabled={!userInput}
+              >
+                Submit
+              </button>
+            </div>
           </form>
+          </div>
         </div>
       </div>
     );
