@@ -32,6 +32,11 @@
   box-sizing: border-box;
 }
 
+.message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .sent {
   background-color: #dcf8c6;
   margin-right: 10px; 
@@ -131,5 +136,10 @@
 
 .search-count {
   font-size: 0.9rem;
+  color: #555;
+}
+
+.loading-info {
+  font-size: 0.85rem;
   color: #555;
 }

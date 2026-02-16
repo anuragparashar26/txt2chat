@@ -1,7 +1,187 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { AutoSizer, List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { AutoSizer, List } from 'react-virtualized';
 import 'react-virtualized/styles.css';
 import './App.css';
+
+const MESSAGE_REGEX = /^(\d{1,2}\/\d{1,2}\/\d{2,4}),\s(\d{1,2}:\d{2}\s(?:am|pm))\s-\s([^:]+):\s([\s\S]*)$/i;
+
+const yieldToMain = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const normalizeDateToDdMmYy = (rawDate) => {
+  const parts = rawDate.split('/');
+  if (parts.length !== 3) return null;
+
+  const day = parts[0].padStart(2, '0');
+  const month = parts[1].padStart(2, '0');
+  const year = parts[2].length === 4 ? parts[2].slice(-2) : parts[2].padStart(2, '0');
+  return `${day}/${month}/${year}`;
+};
+
+const estimateTextMessageHeight = (content) => {
+  const safeContent = content || '';
+  const approxCharsPerLine = 42;
+  const approxLineHeight = 20;
+  const baseHeight = 72;
+
+  const wrappedLineCount = safeContent
+    .split('\n')
+    .reduce((total, line) => total + Math.max(1, Math.ceil(line.length / approxCharsPerLine)), 0);
+
+  const calculatedHeight = baseHeight + wrappedLineCount * approxLineHeight;
+  return Math.max(80, calculatedHeight);
+};
+
+const getEstimatedMessageHeight = (content) => {
+  if (content.includes('(file attached)')) {
+    return getMediaPreviewHeight(content) + 70;
+  }
+
+  return estimateTextMessageHeight(content);
+};
+
+const parseChatLine = (line) => {
+  const match = line.match(MESSAGE_REGEX);
+  if (!match) return null;
+
+  const [, rawDate, rawTime, sender, rawContent] = match;
+  const normalizedDate = normalizeDateToDdMmYy(rawDate);
+  if (!normalizedDate) return null;
+
+  const time = rawTime.toLowerCase();
+  const content = rawContent ?? '';
+  const estimatedHeight = getEstimatedMessageHeight(content);
+
+  return {
+    timestamp: `${normalizedDate}, ${time}`,
+    date: normalizedDate,
+    time,
+    sender: sender.trim(),
+    content,
+    contentLower: content.toLowerCase(),
+    estimatedHeight,
+  };
+};
+
+const parseChatFromText = (text, onProgress) => {
+  const lines = text.split(/\r?\n/);
+  const parsedMessages = [];
+  let lastMessage = null;
+
+  lines.forEach((line, index) => {
+    const parsed = parseChatLine(line);
+    if (parsed) {
+      parsedMessages.push(parsed);
+      lastMessage = parsed;
+    } else if (lastMessage && line.trim().length > 0) {
+      lastMessage.content = `${lastMessage.content}\n${line}`;
+      lastMessage.contentLower = lastMessage.content.toLowerCase();
+      lastMessage.timestamp = `${lastMessage.date}, ${lastMessage.time}`;
+      lastMessage.estimatedHeight = getEstimatedMessageHeight(lastMessage.content);
+    }
+
+    if (onProgress && index % 5000 === 0) {
+      onProgress(Math.min(99, Math.round((index / lines.length) * 100)));
+    }
+  });
+
+  if (onProgress) onProgress(100);
+  return parsedMessages;
+};
+
+const parseChatFromStream = async (stream, totalBytes, onProgress) => {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let bytesRead = 0;
+  let chunkCount = 0;
+  const parsedMessages = [];
+  let lastMessage = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    bytesRead += value.byteLength;
+    chunkCount += 1;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const parsed = parseChatLine(line);
+      if (parsed) {
+        parsedMessages.push(parsed);
+        lastMessage = parsed;
+      } else if (lastMessage && line.trim().length > 0) {
+        lastMessage.content = `${lastMessage.content}\n${line}`;
+        lastMessage.contentLower = lastMessage.content.toLowerCase();
+        lastMessage.estimatedHeight = getEstimatedMessageHeight(lastMessage.content);
+      }
+    }
+
+    if (onProgress && totalBytes) {
+      onProgress(Math.min(99, Math.round((bytesRead / totalBytes) * 100)));
+    }
+
+    if (chunkCount % 8 === 0) {
+      await yieldToMain();
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.length > 0) {
+    const parsed = parseChatLine(buffer);
+    if (parsed) {
+      parsedMessages.push(parsed);
+    } else if (lastMessage && buffer.trim().length > 0) {
+      lastMessage.content = `${lastMessage.content}\n${buffer}`;
+      lastMessage.contentLower = lastMessage.content.toLowerCase();
+      lastMessage.estimatedHeight = getEstimatedMessageHeight(lastMessage.content);
+    }
+  }
+
+  if (onProgress) onProgress(100);
+  return parsedMessages;
+};
+
+const MEDIA_PREVIEW_REGEX = /([A-Za-z0-9][A-Za-z0-9_.-]*\.(?:jpe?g|png|webp|mp4|opus|mp3|m4a|aac|ogg|wav|zip|pdf|docx?|xlsx?|pptx?|txt)|[A-Za-z0-9_-]+_)/i;
+const loadedMediaKeys = new Set();
+
+const getMediaPreviewHeight = (content) => {
+  const fileNameMatch = content.match(MEDIA_PREVIEW_REGEX);
+  if (!fileNameMatch) return 50;
+
+  const normalizedFileName = fileNameMatch[0].replace(/\s/g, '');
+  let extension = normalizedFileName.includes('.')
+    ? normalizedFileName.split('.').pop().toLowerCase()
+    : 'download';
+
+  if (normalizedFileName.endsWith('_')) {
+    const baseName = normalizedFileName.slice(0, -1);
+    extension = baseName.startsWith('AUD-') || baseName.startsWith('PTT-') ? 'audio' : 'download';
+  }
+
+  const mediaHeights = {
+    jpg: 300,
+    jpeg: 300,
+    png: 300,
+    webp: 300,
+    mp4: 250,
+    opus: 60,
+    mp3: 60,
+    m4a: 60,
+    aac: 60,
+    ogg: 60,
+    wav: 60,
+    audio: 60,
+    zip: 50,
+    pdf: 50,
+    download: 50,
+  };
+
+  return mediaHeights[extension] || 50;
+};
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -13,96 +193,146 @@ function App() {
   const [dateInputValue, setDateInputValue] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selectedMessageIndex, setSelectedMessageIndex] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState('');
+  const [parseProgress, setParseProgress] = useState(0);
   const listRef = useRef();
+  const messagesRef = useRef([]);
+  const mediaUrlCacheRef = useRef(new Map());
 
-  const cache = useRef(
-    new CellMeasurerCache({
-      fixedWidth: true,
-      defaultHeight: 80,
-      minHeight: 50,
-    })
-  );
+  const getRowHeight = useCallback(({ index }) => {
+    if (!messages[index]) return 80;
+    return messages[index].estimatedHeight || 80;
+  }, [messages]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchAndProcessFile = async () => {
-      try {
-        const response = await fetch('/chat.txt');
-        const text = await response.text();
-        const lines = text.split('\n');
-
-        const parsedMessages = lines
-          .map((line) => {
-            const regex = /^(\d{2}\/\d{2}\/\d{2}), (\d{1,2}:\d{2}\s[ap]m) - (.*?): (.*)$/;
-            const match = line.match(regex);
-            if (match) {
-              const [_, date, time, sender, content] = match;
-              return {
-                timestamp: `${date}, ${time}`,
-                date,
-                time,
-                sender,
-                content,
-              };
-            }
-            return null;
-          })
-          .filter(Boolean);
-
-        if (isMounted) {
-          setMessages(parsedMessages);
-          const senders = [...new Set(parsedMessages.map((msg) => msg.sender))];
-          setUniqueSenders(senders);
-        }
-      } catch (error) {
-        console.error('Error loading chat:', error);
-      }
-    };
-
-    fetchAndProcessFile();
-    return () => {
-      isMounted = false;
-    };
+  const clearMediaObjectUrlCache = useCallback(() => {
+    mediaUrlCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
+    mediaUrlCacheRef.current.clear();
   }, []);
 
+  const normalizeDateInputToSearch = useCallback((inputValue) => {
+    const value = inputValue.trim();
+    if (!value) return '';
+
+    const isoMatch = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch;
+      const parsedYear = Number(year);
+      if (parsedYear >= 2000 && parsedYear <= 2099) {
+        return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year.slice(2)}`;
+      }
+      return '';
+    }
+
+    const slashMatch = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if (slashMatch) {
+      const [, day, month, year] = slashMatch;
+      const fullYear = year.length === 2 ? Number(`20${year}`) : Number(year);
+      if (fullYear >= 2000 && fullYear <= 2099) {
+        const normalizedYear = String(fullYear).slice(2);
+        return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${normalizedYear}`;
+      }
+      return '';
+    }
+
+    return '';
+  }, []);
+
+  const applyParsedMessages = useCallback((parsedMessages) => {
+    setMessages(parsedMessages);
+    messagesRef.current = parsedMessages;
+    const senders = [...new Set(parsedMessages.map((msg) => msg.sender))];
+    setUniqueSenders(senders);
+    setSearchResults([]);
+    setSelectedMessageIndex(null);
+    if (listRef.current) {
+      listRef.current.recomputeRowHeights();
+      listRef.current.forceUpdateGrid();
+    }
+  }, []);
+
+  const loadChatFromResponse = useCallback(async (response) => {
+    if (!response.ok) {
+      throw new Error(`Unable to read chat.txt (status ${response.status})`);
+    }
+
+    setLoadingStatus('Parsing chat file...');
+    const contentLengthHeader = response.headers.get('content-length');
+    const totalBytes = contentLengthHeader ? Number(contentLengthHeader) : undefined;
+
+    if (response.body && response.body.getReader) {
+      return parseChatFromStream(response.body, totalBytes, setParseProgress);
+    }
+
+    const fallbackText = await response.text();
+    return parseChatFromText(fallbackText, setParseProgress);
+  }, []);
+
+  const loadChatFromPublicFolder = useCallback(async () => {
+    setIsLoading(true);
+    setLoadingStatus('Loading public/chat.txt...');
+    setParseProgress(0);
+
+    try {
+      const response = await fetch('/chat.txt');
+      const parsedMessages = await loadChatFromResponse(response);
+      applyParsedMessages(parsedMessages);
+      clearMediaObjectUrlCache();
+      setLoadingStatus(`Loaded ${parsedMessages.length.toLocaleString()} messages`);
+    } catch (error) {
+      console.error('Error loading chat:', error);
+      setLoadingStatus('Failed to load chat.txt from public folder');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [applyParsedMessages, clearMediaObjectUrlCache, loadChatFromResponse]);
+
+  const resolveMediaUrl = useCallback(async (fileName) => {
+    if (mediaUrlCacheRef.current.has(fileName)) {
+      return mediaUrlCacheRef.current.get(fileName);
+    }
+
+    const fallbackUrl = `/media/${encodeURIComponent(fileName)}`;
+    return fallbackUrl;
+  }, []);
+
+  useEffect(() => {
+    loadChatFromPublicFolder();
+
+    return () => {
+      clearMediaObjectUrlCache();
+    };
+  }, [clearMediaObjectUrlCache, loadChatFromPublicFolder]);
+
   const rowRenderer = useCallback(
-    ({ index, key, parent, style }) => {
+    ({ index, key, style }) => {
       const msg = messages[index];
       const isSent = msg.sender === currentUser;
       const isHighlighted = index === selectedMessageIndex;
+      const hasAttachment = msg.content.includes('(file attached)');
 
       return (
-        <CellMeasurer
-          cache={cache.current}
-          columnIndex={0}
+        <div
           key={key}
-          parent={parent}
-          rowIndex={index}
+          style={{ ...style, padding: 0 }}
+          className={`${isHighlighted ? 'highlighted-message' : ''}`}
         >
-          {({ measure, registerChild }) => (
-            <div
-              ref={registerChild}
-              style={{ ...style, padding: 0 }}
-              className={`${isHighlighted ? 'highlighted-message' : ''}`}
-            >
-              <div className={`message-wrapper ${isSent ? 'sent-wrapper' : 'received-wrapper'}`}>
-                <div className={`message ${isSent ? 'sent' : 'received'}`}>
-                  {msg.sender !== currentUser && <div className="sender">{msg.sender}</div>}
-                  {msg.content.includes('(file attached)') ? (
-                    <Media content={msg.content} onLoad={measure} index={index} />
-                  ) : (
-                    <p>{msg.content}</p>
-                  )}
-                  <div className="timestamp">{msg.timestamp}</div>
-                </div>
-              </div>
+          <div className={`message-wrapper ${isSent ? 'sent-wrapper' : 'received-wrapper'}`}>
+            <div className={`message ${isSent ? 'sent' : 'received'}`}>
+              {msg.sender !== currentUser && <div className="sender">{msg.sender}</div>}
+              {hasAttachment ? (
+                <Media content={msg.content} resolveMediaUrl={resolveMediaUrl} />
+              ) : (
+                <p>{msg.content}</p>
+              )}
+              <div className="timestamp">{msg.timestamp}</div>
             </div>
-          )}
-        </CellMeasurer>
+          </div>
+        </div>
       );
     },
-    [currentUser, selectedMessageIndex, messages]
+    [currentUser, messages, resolveMediaUrl, selectedMessageIndex]
   );
 
   const handleUserSubmit = (e) => {
@@ -114,33 +344,46 @@ function App() {
     }
   };
 
-  const performSearch = useCallback(() => {
-    const results = messages
-      .map((msg, index) => {
-        const contentMatch = searchTerm
-          ? msg.content.toLowerCase().includes(searchTerm.toLowerCase())
-          : true;
-        const dateMatch = dateSearch ? msg.date === dateSearch : true;
-        return contentMatch && dateMatch ? index : null;
-      })
-      .filter((index) => index !== null);
+  const performSearch = useCallback(async () => {
+    const source = messagesRef.current;
+    const normalizedTerm = searchTerm.trim().toLowerCase();
+    const hasTextFilter = normalizedTerm.length > 0;
+    const hasDateFilter = Boolean(dateSearch);
+
+    const results = [];
+    for (let index = 0; index < source.length; index += 1) {
+      const message = source[index];
+      const contentMatch = hasTextFilter ? message.contentLower.includes(normalizedTerm) : true;
+      const dateMatch = hasDateFilter ? message.date === dateSearch : true;
+
+      if (contentMatch && dateMatch) {
+        results.push(index);
+      }
+
+      if (index % 5000 === 0) {
+        await yieldToMain();
+      }
+    }
 
     setSearchResults(results);
     return results;
-  }, [messages, searchTerm, dateSearch]);
+  }, [dateSearch, searchTerm]);
 
-  const handleSearch = useCallback(() => {
-   const results = performSearch();
+  const handleSearch = useCallback(async () => {
+    if (isSearching || isLoading) return;
+
+    setIsSearching(true);
+    const results = await performSearch();
     if (results.length > 0) {
       setSelectedMessageIndex(results[0]);
       if (listRef.current) {
         listRef.current.scrollToRow(results[0]);
-        listRef.current.recomputeRowHeights(results[0] - 10);
       }
     } else {
       alert('No messages found matching your search criteria.');
     }
-  }, [performSearch]);
+    setIsSearching(false);
+  }, [isLoading, isSearching, performSearch]);
 
   const jumpToNext = () => {
     if (searchResults.length === 0) return;
@@ -149,7 +392,6 @@ function App() {
     setSelectedMessageIndex(searchResults[nextIndex]);
     if (listRef.current) {
       listRef.current.scrollToRow(searchResults[nextIndex]);
-      listRef.current.recomputeRowHeights(searchResults[nextIndex] - 10);
     }
   };
 
@@ -160,7 +402,6 @@ function App() {
     setSelectedMessageIndex(searchResults[prevIndex]);
     if (listRef.current) {
       listRef.current.scrollToRow(searchResults[prevIndex]);
-      listRef.current.recomputeRowHeights(searchResults[prevIndex] - 10);
     }
   };
 
@@ -172,32 +413,22 @@ function App() {
     setSelectedMessageIndex(null);
   };
 
-  const formatDateForInput = (dateStr) => {
-    if (!dateStr) return '';
-    const [day, month, year] = dateStr.split('/');
-    const fullYear = parseInt(year) < 100 ? `20${year}` : year;
-    return `${fullYear}-${month}-${day}`;
-  };
-
   const handleDateChange = (e) => {
     const value = e.target.value;
     setDateInputValue(value);
+    setDateSearch(normalizeDateInputToSearch(value));
+  };
 
-    if (value) {
-      const [year, month, day] = value.split('-');
-      if (year && month && day && year.length === 4) {
-        const parsedYear = parseInt(year);
-        if (parsedYear >= 2000 && parsedYear <= 2099) {
-          const appDate = `${day}/${month}/${year.slice(2)}`;
-          setDateSearch(appDate);
-        } else {
-          setDateSearch('');
-        }
-      } else {
-        setDateSearch('');
-      }
-    } else {
+  const handleDateBlur = () => {
+    const normalizedDate = normalizeDateInputToSearch(dateInputValue);
+    if (dateInputValue.trim() && !normalizedDate) {
       setDateSearch('');
+      return;
+    }
+
+    if (normalizedDate) {
+      setDateSearch(normalizedDate);
+      setDateInputValue(normalizedDate);
     }
   };
 
@@ -206,6 +437,11 @@ function App() {
       <div className="app">
         <div className="chat-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
           <form onSubmit={handleUserSubmit} style={{ textAlign: 'center' }}>
+            {isLoading && (
+              <p className="loading-info">
+                {loadingStatus} ({parseProgress}%)
+              </p>
+            )}
             <h3>Who are you?</h3>
             {uniqueSenders.length > 1 ? (
               <>
@@ -251,14 +487,17 @@ function App() {
           className="search-input"
         />
         <input
-          type="date"
+          type="text"
           value={dateInputValue}
           onChange={handleDateChange}
+          onBlur={handleDateBlur}
           className="date-input"
-          min="2000-01-01"
-          max="2099-12-31"
+          placeholder="YYYY-MM-DD or DD/MM/YY"
         />
-        <button onClick={handleSearch} className="search-button">Search</button>
+        <button onClick={handleSearch} className="search-button" disabled={isSearching || isLoading}>
+          {isSearching ? 'Searching...' : 'Search'}
+        </button>
+        {isLoading && <span className="loading-info">{loadingStatus} ({parseProgress}%)</span>}
         {searchResults.length > 0 && (
           <>
             <span className="search-count">
@@ -279,10 +518,10 @@ function App() {
               width={width}
               height={height}
               rowCount={messages.length}
-              deferredMeasurementCache={cache.current}
-              rowHeight={cache.current.rowHeight}
+              rowHeight={getRowHeight}
               rowRenderer={rowRenderer}
-              overscanRowCount={10} 
+              overscanRowCount={30}
+              scrollingResetTimeInterval={150}
               scrollToAlignment="start"
             />
           )}
@@ -292,58 +531,77 @@ function App() {
   );
 }
 
-function Media({ content, onLoad, index }) {
+function Media({ content, resolveMediaUrl }) {
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isInView, setIsInView] = useState(false);
-  const mediaRef = useRef();
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [isResolvingUrl, setIsResolvingUrl] = useState(false);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsInView(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1 }
-    );
+  const fileNameMatch = content.match(MEDIA_PREVIEW_REGEX);
+  const hasMediaFile = Boolean(fileNameMatch);
 
-    if (mediaRef.current) {
-      observer.observe(mediaRef.current);
-    }
+  let fileName = '';
+  let extension = 'download';
+  if (hasMediaFile) {
+    const normalizedFileName = fileNameMatch[0].replace(/\s/g, '');
+    fileName = normalizedFileName;
+    extension = normalizedFileName.includes('.') ? normalizedFileName.split('.').pop().toLowerCase() : 'download';
 
-    return () => observer.disconnect();
-  }, []);
-
-  const handleLoad = () => {
-    setIsLoaded(true);
-    if (onLoad) {
-      onLoad(); 
-    }
-  };
-
-  const fileNameMatch = content.match(/([A-Za-z0-9-_]+\.(jpg|webp|mp4|opus|mp3|zip|pdf|\w+)?|_)/);
-  if (!fileNameMatch) return <p>{content}</p>;
-
-  let fileName = fileNameMatch[0];
-  let extension = fileName.split('.').pop().toLowerCase();
-
-  if (fileName.endsWith('.') || fileName.endsWith('_')) {
-    const baseName = fileName.slice(0, -1);
-    fileName = `${baseName}_`;
-    if (baseName.startsWith('AUD-') || baseName.startsWith('PTT-')) {
-      extension = 'audio';
-    } else {
-      extension = 'download';
+    if (normalizedFileName.endsWith('_')) {
+      const baseName = normalizedFileName.slice(0, -1);
+      extension = baseName.startsWith('AUD-') || baseName.startsWith('PTT-') ? 'audio' : 'download';
     }
   }
 
+  useEffect(() => {
+    if (!hasMediaFile || !fileName) {
+      setIsLoaded(false);
+      return;
+    }
+
+    setIsLoaded(loadedMediaKeys.has(fileName));
+  }, [fileName, hasMediaFile]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!hasMediaFile || !fileName) return undefined;
+
+    setIsResolvingUrl(true);
+    resolveMediaUrl(fileName)
+      .then((resolvedUrl) => {
+        if (!isMounted) return;
+        setMediaUrl(resolvedUrl);
+        setIsResolvingUrl(false);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setMediaUrl(`/media/${encodeURIComponent(fileName)}`);
+        setIsResolvingUrl(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fileName, hasMediaFile, resolveMediaUrl]);
+
+  const handleLoad = () => {
+    if (fileName) {
+      loadedMediaKeys.add(fileName);
+    }
+    setIsLoaded(true);
+  };
+
   const mediaHeights = {
     'jpg': 300,
+    'jpeg': 300,
+    'png': 300,
     'webp': 300,
     'mp4': 250,
     'opus': 60,
     'mp3': 60,
+    'm4a': 60,
+    'aac': 60,
+    'ogg': 60,
+    'wav': 60,
     'audio': 60,
     'zip': 50,
     'pdf': 50,
@@ -352,7 +610,7 @@ function Media({ content, onLoad, index }) {
 
   const fixedHeight = mediaHeights[extension] || 50;
   const loadingStyle = {
-    display: isLoaded || !isInView ? 'none' : 'flex',
+    display: isLoaded || isResolvingUrl ? 'none' : 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '20px',
@@ -372,19 +630,29 @@ function Media({ content, onLoad, index }) {
     margin: '5px 0',
   };
 
-  if (!isInView) {
-    return <div ref={mediaRef} style={{ height: `${fixedHeight}px` }} />;
+  if (!hasMediaFile) {
+    return <p>{content}</p>;
+  }
+
+  if (isResolvingUrl || !mediaUrl) {
+    return (
+      <div style={{ ...loadingStyle, display: 'flex' }}>
+        Resolving file...
+      </div>
+    );
   }
 
   switch (extension) {
     case 'jpg':
+    case 'jpeg':
+    case 'png':
     case 'webp':
       return (
-        <div ref={mediaRef}>
+        <div>
           {!isLoaded && <div style={loadingStyle}>Loading image...</div>}
           <div style={isLoaded ? mediaContainerStyle : null}>
             <img
-              src={`/media/${fileName}`}
+              src={mediaUrl}
               alt="img"
               onLoad={handleLoad}
               style={{
@@ -394,18 +662,18 @@ function Media({ content, onLoad, index }) {
                 display: isLoaded ? 'block' : 'none',
                 cursor: 'pointer',
               }}
-              onClick={() => window.open(`/media/${fileName}`, '_blank')}
+              onClick={() => window.open(mediaUrl, '_blank')}
             />
           </div>
         </div>
       );
     case 'mp4':
       return (
-        <div ref={mediaRef}>
+        <div>
           {!isLoaded && <div style={loadingStyle}>Loading video...</div>}
           <div style={isLoaded ? mediaContainerStyle : null}>
             <video
-              src={`/media/${fileName}`}
+              src={mediaUrl}
               controls
               onLoadedMetadata={handleLoad}
               style={{
@@ -420,13 +688,17 @@ function Media({ content, onLoad, index }) {
       );
     case 'opus':
     case 'mp3':
+    case 'm4a':
+    case 'aac':
+    case 'ogg':
+    case 'wav':
     case 'audio':
       return (
-        <div ref={mediaRef} style={{ width: '100%' }}>
+        <div style={{ width: '100%' }}>
           {!isLoaded && <div style={loadingStyle}>Loading audio...</div>}
           <div style={isLoaded ? mediaContainerStyle : null}>
             <audio
-              src={`/media/${fileName}`}
+              src={mediaUrl}
               controls
               onLoadedData={handleLoad}
               style={{ width: '100%', display: isLoaded ? 'block' : 'none' }}
@@ -440,12 +712,12 @@ function Media({ content, onLoad, index }) {
     case 'pdf':
     case 'download':
       return (
-        <div ref={mediaRef} style={{ display: 'flex', alignItems: 'center', marginTop: '5px', marginBottom: '5px', height: `${fixedHeight}px` }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: '5px', marginBottom: '5px', height: `${fixedHeight}px` }}>
           <svg width="24" height="24" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
             <path fill="#555" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
           </svg>
           <a
-            href={`/media/${fileName}`}
+            href={mediaUrl}
             download
             onLoad={handleLoad}
             className="file-download"
@@ -457,12 +729,12 @@ function Media({ content, onLoad, index }) {
       );
     default:
       return (
-        <div ref={mediaRef} style={{ display: 'flex', alignItems: 'center', marginTop: '5px', marginBottom: '5px', height: `${fixedHeight}px` }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: '5px', marginBottom: '5px', height: `${fixedHeight}px` }}>
           <svg width="24" height="24" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
             <path fill="#555" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
           </svg>
           <a
-            href={`/media/${fileName}`}
+            href={mediaUrl}
             download
             onLoad={handleLoad}
             className="file-download"
