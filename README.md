@@ -53,8 +53,5 @@
   ```
   12/31/22, 11:59 PM - Sender: Message content
   ```
-- Multi-line and system messages are **not** handled yet.
-- Media file detection is pattern-based; may need adjustment for some exports.
-
 
 **Privacy:** All chat data and media stay in your browser. No uploads or external APIs.
