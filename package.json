@@ -3,7 +3,7 @@
   "name": "txt2chat",
   "description": "TXT2Chat - Exported chat viewer and search tool",
   "author": "Anurag <anuragp5025@example.com>",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "homepage": ".",
   "private": true,
   "dependencies": {
@@ -24,35 +24,38 @@
     "eject": "react-scripts eject",
     "electron": "electron .",
     "electron-dev": "concurrently \"npm:start\" \"wait-on http://localhost:3000 && electron .\"",
-    "build-electron": "NODE_OPTIONS=--max_old_space_size=8192 electron-builder --linux"
+    "build-electron": "cross-env NODE_OPTIONS=--max_old_space_size=8192 electron-builder --win"
   },
-    "build": {
-      "appId": "com.txt2chat.app",
-      "productName": "TXT2Chat",
-      "files": [
-        "electron.js",
-        "electron-preload.js",
-        "package.json",
-        "build/**/*",
-        "!src",
-        "!public"
-      ],
-      "extraMetadata": {
-        "main": "electron.js"
-      },
-      "directories": {
-        "buildResources": "public"
-      },
-      "win": {
-        "target": false
-      },
-      "linux": {
-        "target": ["AppImage", "deb"],
-        "icon": "public/icon.png"
-      }
+  "build": {
+    "appId": "com.txt2chat.app",
+    "productName": "TXT2Chat",
+    "files": [
+      "electron.js",
+      "electron-preload.js",
+      "package.json",
+      "build/**/*",
+      "!src",
+      "!public"
+    ],
+    "extraMetadata": {
+      "main": "electron.js"
     },
+    "directories": {
+      "buildResources": "public"
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": false
+    }
+  },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0",
     "electron": "^29.4.6",
     "electron-builder": "^26.7.0",
     "wait-on": "^7.0.1"
