@@ -56,16 +56,48 @@
 2. Run the `.exe` file.
 3. On first launch, select your exported chat folder when prompted.
 
-#### **Build Electron App Manually (Advanced)**
+#### **Build Electron App Manually**
 1. Install dependencies:
   ```bash
   npm install
   ```
-2. Build the React app:
+
+2. Update package.json
+
+For Windows 
+
+```
+Inside scripts:
+    "build-electron": "cross-env NODE_OPTIONS=--max_old_space_size=8192 electron-builder --win"
+
+Inside build:
+"win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      icon: "public/icon.png"
+    },
+```
+
+For Linux:
+
+```
+Inside scripts:
+    "build-electron": "cross-env NODE_OPTIONS=--max_old_space_size=8192 electron-builder --linux"
+
+Inside build:
+"linux": {
+        "target": ["AppImage", "deb"],
+        "icon": "public/icon.png"
+      }
+```
+
+3. Build the React app:
   ```bash
   npm run build
   ```
-3. Build the Electron app for Windows:
+4. Build the Electron app for Windows:
   ```bash
   npm run build-electron
   ```
