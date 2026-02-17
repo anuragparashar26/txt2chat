@@ -103,4 +103,3 @@ You can install txt2chat on any Debian-based Linux distribution using the pre-bu
 
 **Privacy:** All chat data and media stay in your browser. No uploads or external APIs.
 
-
