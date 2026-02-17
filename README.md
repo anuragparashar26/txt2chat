@@ -1,11 +1,11 @@
 # txt2chat: WhatsApp Chat Viewer
 
-**txt2chat** is a fast, modern React app to **visualize and explore WhatsApp exported chat files**. It loads chat data and media directly from the `public/` folder for maximum performance and privacy. The UI is optimized for huge chat logs, with smooth scrolling and instant search. 
+**txt2chat** is an app to **visualize and explore WhatsApp exported chat files**. The UI is optimized for huge chat logs, with smooth scrolling and instant search.
 
 
 ## Features
 
-- **Parse and display** messages from `public/chat.txt`
+- **Parse and display** messages from `public/chat.txt` 
 - **Identify unique senders** and select your user
 - **Highlight** your messages
 - **Search** by:
@@ -17,9 +17,11 @@
 - **Stable, flicker-free virtualization** for huge chat files
 - **Lazy-load media** for performance
 - **Full-text search**
-- **All assets and icons** loaded from `public/` (no local file/folder picker)
+- **All assets and icons** loaded from `public/` 
 
+#### NOTE: Executables are also available for Linux and Windows that gives users choice to select specific folder.
 
+---
 
 ## How to Use
 
@@ -125,6 +127,7 @@ You can install txt2chat on any Debian-based Linux distribution using the pre-bu
    sudo apt-get install -f
    ```
 
+---
 
 ## Note
 
