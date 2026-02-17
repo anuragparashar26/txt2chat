@@ -66,7 +66,7 @@
 
 2. Update package.json
 
-For Windows 
+For Windows:
 
 ```
 Inside scripts:
