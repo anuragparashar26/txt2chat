@@ -51,18 +51,18 @@
 
   1. Download the latest `.deb` file from the Releases section.
   2. Install it using:
-    ```bash
-    sudo dpkg -i txt2chat_0.1.1.deb
-    ```
+```
+    sudo dpkg -i txt2chat_0.1.0.deb
+```
   3. Launch the app from your applications menu or with:
-    ```bash
+```bash
     txt2chat
-    ```
+```
 
   If you encounter missing dependencies, run:
-  ```bash
+```bash
   sudo apt-get install -f
-  ```
+```
 
 **Note:** The app loads only from the `public/` folder. No local file/folder picker is used. All icons and branding use `public/icon.png`.
 
